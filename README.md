@@ -25,6 +25,20 @@ This creates a local `chroma_db/` folder. The folder is ignored by git because i
 
 ## Query the knowledge base
 
+For a ChatGPT-like answer:
+
+```bash
+python chat.py "怎么安装打印头"
+```
+
+Or start an interactive chat:
+
+```bash
+python chat.py
+```
+
+For raw matching chunks only:
+
 ```bash
 python test_rag.py
 ```
