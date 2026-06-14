@@ -1,0 +1,8 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated local vector database; rebuild with build_rag.py.
+chroma_db/
