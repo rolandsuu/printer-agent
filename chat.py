@@ -6,12 +6,14 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from typing import Any, TypedDict
 
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langgraph.graph import END, START, StateGraph
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -30,6 +32,13 @@ SYSTEM_PROMPT = """你是一个专业、耐心的打印机说明书助手。
 - 如果有安全风险或注意事项，要提醒用户。
 - 最后加一个“参考来源”小节，列出你用到的文件和页码。
 """
+
+
+class PrinterAgentState(TypedDict, total=False):
+    question: str
+    k: int
+    documents: list[Document]
+    answer: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,8 +141,7 @@ def unique_sources(documents: list[Document]) -> str:
     return "\n".join(lines)
 
 
-def ask_question(db: Chroma, llm: ChatOpenAI, question: str, k: int) -> str:
-    documents = db.similarity_search(question, k=k)
+def generate_answer(llm: ChatOpenAI, question: str, documents: list[Document]) -> str:
     if not documents:
         return "我在说明书里没有找到相关内容。"
 
@@ -145,12 +153,42 @@ def ask_question(db: Chroma, llm: ChatOpenAI, question: str, k: int) -> str:
     return answer
 
 
-def run_once(db: Chroma, llm: ChatOpenAI, question: str, k: int) -> None:
+def create_printer_agent(db: Chroma, llm: ChatOpenAI) -> Any:
+    graph = StateGraph(PrinterAgentState)
+
+    def retrieve_manual_context(state: PrinterAgentState) -> PrinterAgentState:
+        question = state["question"]
+        k = state.get("k", 4)
+        return {"documents": db.similarity_search(question, k=k)}
+
+    def answer_with_manual_context(state: PrinterAgentState) -> PrinterAgentState:
+        return {
+            "answer": generate_answer(
+                llm=llm,
+                question=state["question"],
+                documents=state.get("documents", []),
+            )
+        }
+
+    graph.add_node("retrieve_manual_context", retrieve_manual_context)
+    graph.add_node("answer_with_manual_context", answer_with_manual_context)
+    graph.add_edge(START, "retrieve_manual_context")
+    graph.add_edge("retrieve_manual_context", "answer_with_manual_context")
+    graph.add_edge("answer_with_manual_context", END)
+    return graph.compile()
+
+
+def ask_question(agent: Any, question: str, k: int) -> str:
+    result = agent.invoke({"question": question, "k": k})
+    return str(result["answer"])
+
+
+def run_once(agent: Any, question: str, k: int) -> None:
     print("\n助手：")
-    print(ask_question(db, llm, question, k))
+    print(ask_question(agent, question, k))
 
 
-def run_interactive(db: Chroma, llm: ChatOpenAI, k: int) -> None:
+def run_interactive(agent: Any, k: int) -> None:
     print("Printer Agent chat is ready. Type q, quit, or exit to stop.\n")
     while True:
         try:
@@ -164,7 +202,7 @@ def run_interactive(db: Chroma, llm: ChatOpenAI, k: int) -> None:
         if not question:
             continue
 
-        run_once(db, llm, question, k)
+        run_once(agent, question, k)
         print()
 
 
@@ -178,12 +216,13 @@ def main() -> None:
     require_environment()
     db = create_vector_store()
     llm = create_chat_model(args.temperature)
+    agent = create_printer_agent(db, llm)
 
     question = " ".join(args.question).strip()
     if question:
-        run_once(db, llm, question, args.k)
+        run_once(agent, question, args.k)
     else:
-        run_interactive(db, llm, args.k)
+        run_interactive(agent, args.k)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # printer-agent
 
-A small local RAG project that builds a Chroma vector database from PDF manuals and searches it with OpenAI embeddings.
+A small local RAG project that builds a Chroma vector database from PDF manuals and answers questions through a LangGraph agent.
 
 ## Setup
 
@@ -42,3 +42,12 @@ For raw matching chunks only:
 ```bash
 python test_rag.py
 ```
+
+## Where the agent is
+
+The LangGraph agent is in `chat.py`.
+
+It has two graph nodes:
+
+1. `retrieve_manual_context`: searches `chroma_db/` for relevant PDF chunks.
+2. `answer_with_manual_context`: sends the question and retrieved chunks to the chat model.
